@@ -1,0 +1,16 @@
+# Ignore built files
+*.opensdf
+*.sdf
+*.suo
+*.user
+*.js
+/ipch/
+/Debug/
+/Release/
+/x64/
+/src/Debug/
+/src/Release/
+/src/x64/
+/test/Debug/
+/test/Release/
+/test/x64/
