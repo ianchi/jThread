@@ -24,6 +24,21 @@
     <ClInclude Include="jThread.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="jsrt-wrappers\jsrt-wrappers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="jsrt-wrappers\stdafx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="jsrt-wrappers\targetver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ExecProcess2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="jsrt-wrappers\jsrt-proxy_object.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -32,5 +47,20 @@
     <ClCompile Include="jThread.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="jsrt-wrappers\jsrt-wrappers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ExecProcess2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="help.txt" />
+    <Text Include="usage.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="jThread.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

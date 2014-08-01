@@ -82,4 +82,4 @@ The Chakra JavaScript Engine must be installed in the system (requires IE9 or hi
 
 Most work has been possible thanks to Paul Vick's projects and his help:
    + jsrt-wrappers on which this solution is based 
-   + JavaScript Runtime Hosting Sample http://code.msdn.microsoft.com/JavaScript-Runtime-Hosting-d3a13880#content
+   + [JavaScript Runtime Hosting Sample](http://code.msdn.microsoft.com/JavaScript-Runtime-Hosting-d3a13880#content)

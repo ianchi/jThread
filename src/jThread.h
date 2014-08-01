@@ -1,12 +1,28 @@
 
 #pragma once
+#ifndef JTHREAD_H
+#define JTHREAD_H
 
 //variables globales
 #define GET_SELF JSRuntimeInstance* self = static_cast<JSRuntimeInstance*>(jsrt::external_object(info.this_value()).data())
 
-class GlobalHostOptions;
 
-//clase para el parseo de argumentos
+
+enum scriptMode : unsigned int { //tres bits: async | eval | buffered stdErr
+	main = 0,
+	async = 1,
+	eval = 2,
+	buffer = 4
+};
+
+enum timeMessageMode { start, end, dura };
+enum instanceState { notRun, running, idle };
+
+wstring logTimeMessage(chrono::time_point<chrono::system_clock> &start, chrono::time_point<chrono::system_clock> &end, wstring msg, timeMessageMode mode);
+
+class GlobalHostOptions;
+class ExecProcess;
+
 class HostOptions {
 public:
 	bool debug;
@@ -28,25 +44,16 @@ public:
 	HostOptions(int argc, wchar_t* argv[])  {
 		parseArguments(argc, argv);
 	};
-	HostOptions(HostOptions &opts, wstring script, wstring arg, jsrt::optional<jsrt::object> extraOpt) : 
+
+	HostOptions(HostOptions &opts, wstring script) :
 		debug(opts.debug), verbose(opts.verbose), help(opts.help),
 		profile(opts.profile), outFile(opts.outFile), errFile(opts.errFile),
-		timeoutMins(opts.timeoutMins),parseOK(opts.parseOK)	{
+		timeoutMins(opts.timeoutMins), parseOK(opts.parseOK)	{
 		//ajusta script y parametro
 		tr2::sys::wpath path = script;
 		scriptName = path.leaf();
 		scriptPath = tr2::sys::complete(path).parent_path();
-		scriptArguments.push_back(arg);
-
-		//actualiza opciones extras
-		if (extraOpt.has_value()) {
-			jsrt::property_id prop = jsrt::property_id::create(L"debug");
-			if (extraOpt.value().has_property(prop)) debug = extraOpt.value().get_property<bool>(prop);
-			prop = jsrt::property_id::create(L"profiler");
-			if (extraOpt.value().has_property(prop)) profile = extraOpt.value().get_property<wstring>(prop);
-			prop = jsrt::property_id::create(L"timeout"); 
-			if (extraOpt.value().has_property(prop)) timeoutMins = (int)extraOpt.value().get_property<double>(prop);
-		}
+		
 	};
 	bool parseArguments(int argc, wchar_t* argv[]) {
 		wstring	argument, opt, file;
@@ -104,13 +111,6 @@ public:
 		return result;
 	}
 };
- enum scriptMode : unsigned int { //tres bits: async | eval | buffered stdErr
-	main=0,
-	async=1,
-	eval=2,
-	buffer=4 };
-
-enum struct	timeMessageMode { start, end, dura };
 
 class JSRuntimeInstance {
 public:
@@ -119,22 +119,29 @@ public:
 	//wostringstream stdOut, stdErr; makes the object not movable
 	unique_ptr<wstringstream> stdOut, stdErr;
 	chrono::time_point<chrono::system_clock> startTime, endTime;
-	bool isRunning;
+	instanceState state;
+	mutex runningMutex;
 
 	jsrt::runtime runtime;
 	jsrt::context context;
+	wstring scriptResult;
 
 	future<void> futureReturn;
+
+	vector<unique_ptr<ExecProcess>> childProcess;
+
 
 	void createjThreadObject();
 
 	JSRuntimeInstance(HostOptions &opts, unsigned int runMode = scriptMode::main) : hostOpt(opts), mode(runMode),
-		stdOut(make_unique<wstringstream>()), stdErr(make_unique<wstringstream>())
+		stdOut(make_unique<wstringstream>()), stdErr(make_unique<wstringstream>()), state(instanceState::notRun)
 	{
 		
 	};
 
-	~JSRuntimeInstance() { flush(); }
+	~JSRuntimeInstance() { 
+		
+		flush(); }
 	void operator() (){ run(); }
 
 	void run(); //crea la instancia de JsRt y ejecuta el script según las opciones
@@ -144,13 +151,15 @@ public:
 	}
 
 	void error(wstring msg) { //escribe en el stream de error o en el buffer, según corresponda
-		if (mode & scriptMode::async || mode & scriptMode::buffer) *stdErr << msg;
-		else wcerr << msg;
+		*stdErr << msg;
+		if (!(mode & scriptMode::async || mode & scriptMode::buffer)) 
+			wcerr << msg;
 	};
 
 	void echo(wstring msg) { //escribe en el stream de error o en el buffer, según corresponda
-		if (mode & scriptMode::async) *stdOut << msg;
-		else wcout << msg;
+		*stdOut << msg;
+		if (!(mode & scriptMode::async))
+			wcout << msg;
 	}
 
 	void raise(wstring msg) { //genera una excepción en el script o escribe en error stream, según corresponda
@@ -161,20 +170,22 @@ public:
 	};
 
 	void flush() { //escribe el buffer en los stream de la consola
-		if (mode & scriptMode::async) 
+		if (mode & scriptMode::async) {
+			if (hostOpt.verbose) wcout << logTimeMessage(startTime, endTime, L" - Start script " + hostOpt.scriptName, timeMessageMode::start) << endl;
 			wcout << stdOut->rdbuf();
+			if (hostOpt.verbose) wcout << logTimeMessage(startTime, endTime, L" - End script " + hostOpt.scriptName, timeMessageMode::end) << endl;
+		}
 		if (mode & scriptMode::async || mode & scriptMode::buffer) {
 			wcerr << stdErr->rdbuf();
-			if ((int)(stdErr->tellp()) != 0) wcerr << "End script " << hostOpt.scriptName << " errors.\n";
+			if ((int)(stdErr->tellp()) != 0 && hostOpt.verbose) wcerr << "End script " << hostOpt.scriptName << " errors.\n";
 		}
 	}
 
-	static wstring jsStringify(jsrt::object param);
-	static jsrt::object jsParse(wstring param);
+	static wstring jsStringify(jsrt::value param);
+	static jsrt::value jsParse(wstring param);
 	static JSRuntimeInstance* getSelfPointer(const jsrt::call_info &info);
 	jsrt::object createAsyncObject();
 
-private:
 
 
 	template<class T>
@@ -204,29 +215,28 @@ private:
 		destObj.define_property(propId, descriptor);
 	}
 
-
-	template<class R, class P1>
-	void createFunctionProp(jsrt::object &destObj, const wstring &propName, R(*lambda)(const jsrt::call_info &, P1), 
-		bool isWritable = false, bool isEnumerable = true, bool isConfigurable = false) 
+	//variable argument list
+	void createFunctionProp(jsrt::object &destObj, const wstring &propName, jsrt::value(*lambda)(const jsrt::call_info &, const vector<jsrt::value> &),
+		bool isWritable = false, bool isEnumerable = true, bool isConfigurable = false)
 	{
-		jsrt::function<R, P1> callBack = jsrt::function<R, P1>::create(lambda);
-		jsrt::property_descriptor<jsrt::function<R, P1>> descriptor = jsrt::property_descriptor<jsrt::function<R, P1>>::create();
+		jsrt::function_base  callBack = jsrt::function_base::create(lambda);
+		jsrt::property_descriptor<jsrt::function_base> descriptor = jsrt::property_descriptor<jsrt::function_base>::create();
 		jsrt::property_id propId = jsrt::property_id::create(propName);
 		descriptor.set_configurable(isConfigurable);
 		descriptor.set_enumerable(isEnumerable);
 		descriptor.set_writable(isWritable);
-		//callBack.set_prototype(jsrt::context::global().get_property<jsrt::object>(jsrt::property_id::create(L"Function")));
 
 		descriptor.set_value(callBack);
 		destObj.define_property(propId, descriptor);
 	}
 
-	template<class R, class P1, class P2>
-	void createFunctionProp(jsrt::object &destObj, const wstring &propName, R(*lambda)(const jsrt::call_info &, P1, P2),
+	//no parameteres
+	template<class R>
+	void createFunctionProp(jsrt::object &destObj, const wstring &propName, R(*lambda)(const jsrt::call_info &),
 		bool isWritable = false, bool isEnumerable = true, bool isConfigurable = false)
 	{
-		jsrt::function<R, P1, P2> callBack = jsrt::function<R, P1, P2>::create(lambda);
-		jsrt::property_descriptor<jsrt::function<R, P1, P2>> descriptor = jsrt::property_descriptor<jsrt::function<R, P1, P2>>::create();
+		jsrt::function<R> callBack = jsrt::function<R>::create(lambda);
+		jsrt::property_descriptor<jsrt::function<R>> descriptor = jsrt::property_descriptor<jsrt::function<R>>::create();
 		jsrt::property_id propId = jsrt::property_id::create(propName);
 		descriptor.set_configurable(isConfigurable);
 		descriptor.set_enumerable(isEnumerable);
@@ -235,12 +245,13 @@ private:
 		destObj.define_property(propId, descriptor);
 	}
 
-	template<class R, class P1, class P2, class P3>
-	void createFunctionProp(jsrt::object &destObj, const wstring &propName, R(*lambda)(const jsrt::call_info &, P1, P2, P3),
+	//definite parameters
+	template<class R, class... P>
+	void createFunctionProp(jsrt::object &destObj, const wstring &propName, R(*lambda)(const jsrt::call_info &, P...),
 		bool isWritable = false, bool isEnumerable = true, bool isConfigurable = false)
 	{
-		jsrt::function<R, P1, P2, P3> callBack = jsrt::function<R, P1, P2, P3>::create(lambda);
-		jsrt::property_descriptor<jsrt::function<R, P1, P2, P3>> descriptor = jsrt::property_descriptor<jsrt::function<R, P1, P2, P3>>::create();
+		jsrt::function<R, P...> callBack = jsrt::function<R, P...>::create(lambda);
+		jsrt::property_descriptor<jsrt::function<R, P...>> descriptor = jsrt::property_descriptor<jsrt::function<R, P...>>::create();
 		jsrt::property_id propId = jsrt::property_id::create(propName);
 		descriptor.set_configurable(isConfigurable);
 		descriptor.set_enumerable(isEnumerable);
@@ -267,11 +278,12 @@ class GlobalHostOptions {
 		return ret;
 	}
 	GlobalHostOptions(){}
-} global;
+};
 
 
 //global functions
 void showHelp(bool extendedHelp);
 bool readFile(wstring filename, wstring &content);
 void createRuntime(HostOptions &args);
-wstring logTimeMessage(chrono::time_point<chrono::system_clock> &start, chrono::time_point<chrono::system_clock> &end, wstring msg, timeMessageMode mode);
+
+#endif // !JTHREAD_H

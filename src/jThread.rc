@@ -1,0 +1,29 @@
+//texto de la ayuda
+
+USAGE TEXTFILE usage.txt
+HELP TEXTFILE help.txt
+
+1 VERSIONINFO
+	FILEVERSION 0,1,0,0
+	PRODUCTVERSION 0, 1, 0, 0
+	BEGIN
+		BLOCK "StringFileInfo"
+		BEGIN
+			BLOCK "040904B0"
+			BEGIN
+				VALUE "CompanyName", "Adrian Panella\0"
+				VALUE "FileDescription", "JScript host with multithreading\0"
+				VALUE "FileVersion", "0.1.0.0\0"
+				VALUE "InternalName", "jThread.exe\0"
+				VALUE "LegalCopyright", "Adrian Panella\0"
+				VALUE "OriginalFilename", "jThread.exe\0"
+				VALUE "ProductName", "jThread\0"
+				VALUE "ProductVersion", "1.0a\0"
+			END
+		END
+		BLOCK "VarFileInfo"
+		BEGIN
+			VALUE "Translation", 0x0409, 1200
+		END
+	END
+

@@ -8,6 +8,8 @@
 #include "targetver.h"
 
 //#include <stdio.h>
+#include <io.h>
+#include <fcntl.h>
 
 //#include <share.h>
 
@@ -24,4 +26,7 @@
 #include <iomanip>
 
 #include <jsrt.h>
-#include "C:\Users\yappaa\Source\Repos\jsrt-wrappers\src\jsrt-wrappers.h"
+#include "jsrt-wrappers\jsrt-wrappers.h"
+#include "jsrt-wrappers\jsrt-proxy_object.h"
+
+
