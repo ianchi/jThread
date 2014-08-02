@@ -1081,9 +1081,9 @@ namespace jsrt
             // returns the rounded value.
 			double typeValue;
 			JsErrorCode error= to_native<double>(value, &typeValue);
-			*result = (int)(typeValue >= 0.0 ? (typeValue + 0.5) : (typeValue - 0.5));
+			if (error == JsNoError) *result = (int)(typeValue >= 0.0 ? (typeValue + 0.5) : (typeValue - 0.5));
 
-			return JsErrorInvalidArgument;
+			return error;
         }
 
         template<>

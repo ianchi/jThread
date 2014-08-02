@@ -1,4 +1,3 @@
-// Copyright 2013 Paul Vick
 // Copyright 2014 Adrian Panella
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,20 +40,16 @@ namespace jsrt
 		///     The signature of a member-function callback.
 		/// </summary>
 		/// <remarks>
-		/// <param name="call_info">Information about the call is optional and can be placed in any order.</param>
+		/// <param name="call_info">Information about the call is optional and can be placed as first argument.</param>
 		/// <param name="arguments">Arguments to the call will be deduced from the rest of the "P" arguments of template.</param>
 		/// <returns>The result of the call.</returns>
-
 		template<typename R, typename... P> using Signature = R(O::*)(P...);
+		template<typename R, typename... P> using SignatureInfo = R(O::*)(const jsrt::call_info&, P...);
 
 		/// <summary>
 		///     Internal base class to member-callback wrapper object, to hava common base in templated version
 		/// </summary>
-		class callback_info_base {
-		public:
-			callback_info_base(){}
-			~callback_info_base(){}
-		};
+		class callback_info_base {};
 
 		/// <summary>
 		///     Internal templated class to member-callback wrapper object.
@@ -74,6 +69,9 @@ namespace jsrt
 
 			R operator()(P... p) {
 				return (self->*member)(p...);
+			}
+			R operator()(const callback_info& info, P... p) {
+				return (self->*member)(info, p...);
 			}
 		};
 
@@ -137,19 +135,44 @@ namespace jsrt
 			createGetSetProp(propName, getter != nullptr ? std::bind(getter, &cppObj) : nullptr,
 				setter != nullptr ? std::bind(setter, &cppObj) : nullptr, )
 		}
-		//binds to generic property value
+		/// <summary>
+		///     Binds native data member to js object's property.
+		/// </summary>
 		template<class T>
-		void bindProperty(const std::wstring &propName, T O::*dataMember, bool readOnly = true) {
-			createGetSetProp(propName, std::bind(getterCB<T>, &cppObj, dataMember),
-				readOnly ? nullptr : std::bind(setterCB<T>, &cppObj, dataMember, std::placeholder::_1))
-
+		void bindProperty(const std::wstring &propName, T *data, bool readOnly = true) {
 		}
 
+		template<class T>
+		void bindAccesor(const std::wstring &propName, Signature<T,optional<T>>getter, Signature<void,T>setter
+			, bool isEnumerable = true, bool isConfigurable = false){
+			property_descriptor<T> descriptor = property_descriptor<T>::create();
+			property_id propId = property_id::create(propName);
+			descriptor.set_configurable(isConfigurable);
+			descriptor.set_enumerable(isEnumerable);
+			if (getter != nullptr) descriptor.set_property(property_id::create(L"get"), createCallback<T, optional<T>>(getter));
+			if (setter != nullptr) descriptor.set_property(property_id::create(L"set"), createCallback<void, T>(setter));
+			define_property(propId, descriptor);
+		}
 
+		template<class T>
+		void bindAccesor(const std::wstring &propName, SignatureInfo<T>getter, SignatureInfo<void,T>setter
+			, bool isEnumerable = true, bool isConfigurable = false){
+			property_descriptor<T> descriptor = property_descriptor<T>::create();
+			property_id propId = property_id::create(propName);
+			descriptor.set_configurable(isConfigurable);
+			descriptor.set_enumerable(isEnumerable);
+			if (getter != nullptr) descriptor.set_getter(createCallback<T>(getter));
+			if (setter != nullptr) descriptor.set_setter(createCallback<void,T>(setter));
+			define_property(propId, descriptor);
+		}
+
+		/// <summary>
+		///     Binds native member function to js object method. Overload without call_info
+		/// </summary>
 		template<class R, class... P>
 		void bindMethod(const std::wstring &propName, Signature<R, P...>member,
 			bool isWritable = false, bool isEnumerable = true, bool isConfigurable = false) {
-			value callBack = createFunction<R, P...>(member);
+			value callBack = createCallback<R, P...>(member);
 			property_descriptor<value> descriptor = property_descriptor<value>::create();
 			property_id propId = property_id::create(propName);
 			descriptor.set_configurable(isConfigurable);
@@ -160,7 +183,38 @@ namespace jsrt
 		}
 
 		template<class R, class... P>
-		value createFunction(Signature<R, P...>member)
+		void bindMethod(const std::wstring &propName, SignatureInfo<R, P...>member,
+			bool isWritable = false, bool isEnumerable = true, bool isConfigurable = false) {
+			value callBack = createCallback<R, P...>(member);
+			property_descriptor<value> descriptor = property_descriptor<value>::create();
+			property_id propId = property_id::create(propName);
+			descriptor.set_configurable(isConfigurable);
+			descriptor.set_enumerable(isEnumerable);
+			descriptor.set_writable(isWritable);
+			descriptor.set_value(callBack);
+			define_property(propId, descriptor);
+		}
+
+	private:
+		/// <summary>
+		///     Callback wrapper - overload with call_info. 
+		/// </summary>
+		template<class R, class... P>
+		value createCallback(SignatureInfo<R, P...>member)
+		{
+			JsValueRef ref;
+			callbacks.push_back(std::make_unique<callback_info<R, const call_info&, P...>>(this->cppObj, member));
+			callback_info<R, const call_info&, P...> *cb = (callback_info<R, const call_info&, P...> *)callbacks.back().get();
+
+			runtime::translate_error_code(JsCreateFunction(thunkInfo<R, P...>, cb, &ref));
+			return value(ref);
+		}
+
+		/// <summary>
+		///     Callback wrapper - overload without call_info. 
+		/// </summary>
+		template<class R, class... P>
+		value createCallback(Signature<R, P...>member)
 		{
 			JsValueRef ref;
 			callbacks.push_back(std::make_unique<callback_info<R, P...>>(this->cppObj, member));
@@ -170,63 +224,42 @@ namespace jsrt
 			return value(ref);
 		}
 
-	private:
-
 		/// <summary>
 		///     Helpers to convert and validate JS arguments to templated arguments of corresponding member function.
 		/// </summary>
 		/// <remarks>
-		///     It will generate compilation error if the member functions expects a parameter by reference/pointer other than call_info.
+		///     It will generate compilation error if the member functions expects a parameter by reference/pointer.
 		///     To have a reference to the js object the parameter should be of object/value/.. type, which are implicit references. 
 		/// </remarks>
 		template<class T>
-		static T unpack(const call_info &info, JsValueRef *arguments, int &argItem, int argument_count, int &templateItem, const int maxTemplate, int& cantInfo, int increment) {
+		static T unpack(JsValueRef *arguments, int &argItem, int argument_count, int &templateItem, const int maxTemplate, int increment) {
 			
 			T retValue {}; //will generate compilation error if T is a reference
 
 			//if we are done with the arguments and this is not optional, throw exception
 			if (increment >0 && argItem >= argument_count  && std::is_base_of<optional_base, T>::value)
 				throw jsrt::invalid_argument_exception();
-			else if (increment <0 && templateItem - cantInfo + 1 > argument_count - 1 && !std::is_base_of<optional_base, T>::value)
+			else if (increment <0 && templateItem  + 1 > argument_count - 1 && !std::is_base_of<optional_base, T>::value)
 				throw jsrt::invalid_argument_exception();
 
 			//if this is last parameter but there are more arguments
 			else if( (increment>0 && templateItem == maxTemplate - 1 && argItem < argument_count - 1) 
-				|| (increment<0 && templateItem == maxTemplate - 1 && argument_count-1>maxTemplate-cantInfo))
+				|| (increment<0 && templateItem == maxTemplate - 1 && argument_count-1>maxTemplate))
 			{
-				unpack_rest(retValue, arguments, argItem, increment>0 ? argument_count : maxTemplate - cantInfo, increment);
+				unpack_rest(retValue, arguments, argItem, increment>0 ? argument_count : maxTemplate, increment);
 				templateItem+=increment;
 				return retValue;
 			}
 
 			//genuine parameter
+			//will generate compilation error if T is not convertible to jsrt::value
 			else if ((increment >0 && argItem < argument_count) ||
-				(increment <0 && templateItem - cantInfo + 1 <= argument_count - 1))
+				(increment <0 && templateItem + 1 <= argument_count - 1))
 				if (to_native(arguments[argItem], &retValue) != JsNoError) throw jsrt::fatal_exception();
 
 			templateItem+=increment;
 			argItem+=increment;
 			return retValue;
-		}
-
-		template<>
-		static const call_info& unpack<const call_info &>(const call_info &info, JsValueRef *arguments, int &argItem, int argument_count, int &templateItem, const int maxTemplate, int& cantInfo, int increment)
-		{
-			//if this is last param and there are still arguments, throw exception
-			if (increment>0 && templateItem == maxTemplate - 1 && argItem < argument_count - 1) 
-				throw jsrt::invalid_argument_exception();
-			if (increment<0 && templateItem == maxTemplate - 1 && maxTemplate-cantInfo < argument_count - 1)
-				throw jsrt::invalid_argument_exception();
-
-			templateItem+=increment;
-			cantInfo--;
-			return info; 
-		}
-
-		template<class T>
-		static void countCallInfo(int &res)
-		{
-			if (std::is_same<T, const call_info&>::value) res++;
 		}
 
 		template <class R>
@@ -258,6 +291,19 @@ namespace jsrt
 
 			//differentiates overrides with/without return value;
 			std::conditional<std::is_void<R>::value, bool, int *>::type isVoid = 0; 
+			auto result = thunk2<R, P...>(callback, arguments, argument_count, isVoid);
+
+			return result;
+		}
+
+		template<class R, class... P>
+		static JsValueRef CALLBACK thunkInfo(JsValueRef callee, bool is_construct_call, JsValueRef *arguments, unsigned short argument_count, void *callback_state)
+		{
+			call_info info(value(callee), value(arguments[0]), is_construct_call);
+			callback_info<R, const call_info&, P...> *callback = (callback_info<R, const call_info&, P...>*)callback_state;
+
+			//differentiates overrides with/without return value;
+			std::conditional<std::is_void<R>::value, bool, int *>::type isVoid = 0; 
 			auto result = thunk2<R, P...>(callback, info, arguments, argument_count, isVoid);
 
 			return result;
@@ -265,7 +311,6 @@ namespace jsrt
 
 		//to call arguments in order we use initialization list passed over by this helper
 		//NOTE: VC++ 2013 seems not to follow the stadard and calls in reversed order
-		
 		static struct ordered_pass {
 			template<class F, typename ...T> 
 			ordered_pass(decltype(f())* r, F f, bool discard, T... arg) {
@@ -280,18 +325,77 @@ namespace jsrt
 			static void iterate(...) {}
 		};
 
+		//override without call_info and with return value
 		template<class R, class... P>
-		static JsValueRef thunk2(callback_info<R, P...>*callback, const call_info &info, JsValueRef *arguments, unsigned short argument_count, int *notReturnsVoid) {
+		static JsValueRef thunk2(callback_info<R, P...>*callback, JsValueRef *arguments, unsigned short argument_count, int *notReturnsVoid) {
 			R result = R();
-			const unsigned maxTemplate = sizeof...(P)+1;
+			const unsigned maxTemplate = sizeof...(P);
 
 			int argItem = argument_count - 1, templateItem = maxTemplate - 1, increment = -1;
-			int cantInfo = 0;
-			ordered_pass::iterate((countCallInfo<P>(cantInfo), 1)...);
 
 			try {
-				ordered_pass{ *callback, (argItem = 1, templateItem = 0, increment = 1, false), //if correct order, reset counters for left-right
-					 unpack<P>(info, arguments, argItem, argument_count, templateItem, maxTemplate, cantInfo, increment)... };
+				ordered_pass{&result, *callback, false, //if correct order, reset counters for left-right
+					 unpack<P>(arguments, argItem, argument_count, templateItem, maxTemplate, increment)... };
+			}
+			catch (const invalid_argument_exception &) {
+				context::set_exception(error::create_type_error(L"Incorrect number of arguments."));
+				return JS_INVALID_REFERENCE;
+			}
+			catch (...) {
+				context::set_exception(error::create(L"Fatal error."));
+				return JS_INVALID_REFERENCE;
+			}
+
+			JsValueRef resultValue;
+			auto errCode = from_native(result, &resultValue);
+			if (errCode == JsErrorInExceptionState) { //don't throw exception if already in exception
+				return JS_INVALID_REFERENCE;
+			}
+			else if (errCode != JsNoError) {
+				context::set_exception(error::create_type_error(L"Could not convert value."));
+				return JS_INVALID_REFERENCE;
+			}
+
+			return resultValue;
+		}
+
+		//override without call_info and without return value
+		template<class R, class... P>
+		static JsValueRef thunk2(callback_info<R, P...>*callback, JsValueRef *arguments, unsigned short argument_count, bool returnsVoid) {
+			JsValueRef undefined = context::undefined().handle();
+			const unsigned maxTemplate = sizeof...(P);
+
+			//default starts from end, due to VC++ not std compliant and call right-left
+			int argItem = argument_count-1, templateItem = maxTemplate-1, increment=-1; 
+
+			try {
+				//use initializer list call, to force expansion order evaluation -- NOT WORKING in VC++ 2013!!
+				ordered_pass{ *callback, false, //(argItem=1, templateItem=0, increment=1,false), //if correct order, reset counters for left-right
+					unpack<P>(arguments, argItem, argument_count, templateItem, maxTemplate,increment)... };
+			}
+			catch (const invalid_argument_exception &) {
+				context::set_exception(error::create_type_error(L"Incorrect number of arguments."));
+				return JS_INVALID_REFERENCE;
+			}
+			catch (...) {
+				context::set_exception(error::create(L"Fatal error."));
+				return JS_INVALID_REFERENCE;
+			}
+
+			return undefined;
+		}
+
+		//override with call_info and with return value
+		template<class R, class... P>
+		static JsValueRef thunk2(callback_info<R, const call_info&, P...>*callback, const call_info &info, JsValueRef *arguments, unsigned short argument_count, int *notReturnsVoid) {
+			R result = R();
+			const unsigned maxTemplate = sizeof...(P);
+
+			int argItem = argument_count - 1, templateItem = maxTemplate - 1, increment = -1;
+
+			try {
+				ordered_pass{ &result, *callback, false, info, //if correct order, reset counters for left-right
+					unpack<P>(arguments, argItem, argument_count, templateItem, maxTemplate, increment)... };
 			}
 			catch (const invalid_argument_exception &e) {
 				context::set_exception(error::create_type_error(L"Incorrect number of arguments."));
@@ -315,22 +419,19 @@ namespace jsrt
 			return resultValue;
 		}
 
-
-
+		//override with call_info and without return value
 		template<class R, class... P>
-		static JsValueRef thunk2(callback_info<R, P...>*callback, const call_info &info, JsValueRef *arguments, unsigned short argument_count, bool returnsVoid) {
+		static JsValueRef thunk2(callback_info<R, const call_info&, P...>*callback, const call_info &info, JsValueRef *arguments, unsigned short argument_count, bool returnsVoid) {
 			JsValueRef undefined = context::undefined().handle();
 			const unsigned maxTemplate = sizeof...(P);
 
 			//default starts from end, due to VC++ not std compliant and call right-left
-			int argItem = argument_count-1, templateItem = maxTemplate-1, increment=-1; 
-			int cantInfo = 0;
-			ordered_pass::iterate((countCallInfo<P>(cantInfo),1)...);
+			int argItem = argument_count - 1, templateItem = maxTemplate - 1, increment = -1;
 
 			try {
 				//use initializer list call, to force expansion order evaluation -- NOT WORKING in VC++ 2013!!
-				ordered_pass{ *callback, false, //(argItem=1, templateItem=0, increment=1,false), //if correct order, reset counters for left-right
-					unpack<P>(info, arguments, argItem, argument_count, templateItem, maxTemplate,cantInfo,increment)... };
+				ordered_pass{ *callback, false, info, //(argItem=1, templateItem=0, increment=1,false), //if correct order, reset counters for left-right
+					unpack<P>(arguments, argItem, argument_count, templateItem, maxTemplate, increment)... };
 			}
 			catch (const invalid_argument_exception &) {
 				context::set_exception(error::create_type_error(L"Incorrect number of arguments."));
@@ -343,7 +444,6 @@ namespace jsrt
 
 			return undefined;
 		}
-
 
 	};
 

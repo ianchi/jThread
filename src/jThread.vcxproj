@@ -59,7 +59,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
-      <AdditionalDependencies>jsrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>jsrt.lib;oleaut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>C:\Users\yappaa\Source\Repos\jsrt-wrappers\Debug</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -79,10 +79,11 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>jsrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>jsrt.lib;oleaut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CComPtr.h" />
     <ClInclude Include="ExecProcess2.h" />
     <ClInclude Include="jsrt-wrappers\jsrt-proxy_object.h" />
     <ClInclude Include="jsrt-wrappers\jsrt-wrappers.h" />
@@ -96,6 +97,7 @@
     <ClCompile Include="ExecProcess2.cpp" />
     <ClCompile Include="jsrt-wrappers\jsrt-wrappers.cpp" />
     <ClCompile Include="jThread.cpp" />
+    <ClCompile Include="Source.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>

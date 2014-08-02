@@ -111,7 +111,7 @@ void ExecProcess::finishListener() {
 	endTime = chrono::system_clock::now();
 	state = instanceState::idle;
 }
-void ExecProcess::wait(const jsrt::call_info &info, jsrt::optional<wstring> str, jsrt::optional<wstring> str2) {
+void ExecProcess::wait( jsrt::optional<wstring> str, jsrt::optional<wstring> str2) {
 	if (procInfo.hProcess != nullptr) {
 		WaitForSingleObject(procInfo.hProcess, INFINITE);
 		return ;
@@ -119,13 +119,18 @@ void ExecProcess::wait(const jsrt::call_info &info, jsrt::optional<wstring> str,
 	else return ;
 }
 
+void init();
 
 
 jsrt::object ExecProcess::createJsObject()
 {
 	jsProxy.bindMethod(L"wait", &ExecProcess::wait);
 
+	someData = 1234;
 
+	jsProxy.bindAccesor(L"int", &ExecProcess::getter, &ExecProcess::setter);
+	init();
+	someData = 456;
 	return jsProxy;
 
 	}
