@@ -1,7 +1,7 @@
 //texto de la ayuda
 
-USAGE TEXTFILE usage.txt
-HELP TEXTFILE help.txt
+USAGE TEXTFILE usage.hlp
+HELP TEXTFILE help.hlp
 
 1 VERSIONINFO
 	FILEVERSION 0,1,0,0

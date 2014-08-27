@@ -76,15 +76,21 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>jsrt.lib;oleaut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="CComPtr.h" />
-    <ClInclude Include="ExecProcess2.h" />
+    <ClInclude Include="basic_process.h" />
+    <ClInclude Include="ExecProcess.h" />
+    <ClInclude Include="Header.h" />
+    <ClInclude Include="invhelp.h" />
+    <ClInclude Include="ParseArguments.h" />
+    <ClInclude Include="Profiler.h" />
+    <ClInclude Include="RuntimeThread.h" />
+    <ClInclude Include="winUtil.h" />
     <ClInclude Include="jsrt-wrappers\jsrt-proxy_object.h" />
     <ClInclude Include="jsrt-wrappers\jsrt-wrappers.h" />
     <ClInclude Include="jsrt-wrappers\stdafx.h" />
@@ -94,18 +100,27 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ExecProcess2.cpp" />
+    <ClCompile Include="basic_process.cpp" />
+    <ClCompile Include="ExecProcess.cpp" />
     <ClCompile Include="jsrt-wrappers\jsrt-wrappers.cpp" />
     <ClCompile Include="jThread.cpp" />
+    <ClCompile Include="ParseArguments.cpp" />
+    <ClCompile Include="Profiler.cpp" />
+    <ClCompile Include="RuntimeThread.cpp" />
     <ClCompile Include="Source.cpp" />
+    <ClCompile Include="invhelp.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="winUtil.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="help.txt" />
-    <Text Include="usage.txt" />
+    <Text Include="help.hlp" />
+    <Text Include="usage.hlp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="jThread.rc" />

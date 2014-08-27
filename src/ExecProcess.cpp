@@ -4,26 +4,20 @@
 
 using namespace std;
 
-#include "ExecProcess2.h"
+#include "ExecProcess.h"
+#include "winUtil.h"
 
-ExecProcess::ExecProcess(JSRuntimeInstance *parent) : parentRT(parent), state(instanceState::notRun), jsProxy(*this),
-stdIn_Rd(nullptr), stdIn_Wr(nullptr), stdOut_Rd(nullptr), stdOut_Wr(nullptr), stdErr_Rd(nullptr), stdErr_Wr(nullptr)
-{
-	ZeroMemory(&procInfo, sizeof(procInfo));
-}
 
-void ExecProcess::create(wstring command, wstring args) {
-	startTime = chrono::system_clock::now();
-	state = instanceState::running;
+
+void ExecProcess::startThread() {
+	state = (DWORD)basic_process::stateEnum::running;
+	start(L" - Start external process  " + strName);
 
 	STARTUPINFO options;
 	SECURITY_ATTRIBUTES saAttr;
 	ZeroMemory(&options, sizeof(options));
 
-	//formats executable and parameters
-	if (expandEnvironmentStrings(command, strCommand) &&
-		expandEnvironmentStrings(args, strArguments) &&
-		expandPath(strCommand, strCommand)) {
+	if (!strName.empty()) {
 
 
 		// Set the bInheritHandle flag so pipe handles are inherited. 
@@ -55,8 +49,9 @@ void ExecProcess::create(wstring command, wstring args) {
 			options.hStdInput = stdIn_Rd;
 			options.hStdOutput = stdOut_Wr;
 			options.hStdError = stdErr_Wr;
-			auto result = CreateProcess(strCommand.c_str(),   //  module name 
-				(wchar_t *)strArguments.c_str(),        // Command line
+			wstring command = strPath.empty() ? strName : strPath + L"\\" + strName;
+			auto result = CreateProcess(command.c_str(),   //  module name 
+				(wchar_t *)strArguments[0].c_str(),        // Command line
 				NULL,           // Process handle not inheritable
 				NULL,           // Thread handle not inheritable
 				true,          // Set handle inheritance to FALSE
@@ -69,33 +64,23 @@ void ExecProcess::create(wstring command, wstring args) {
 			if (result) {
 
 				//launch listener threads
-				std::async(launch::async, ExecProcess::pipeListener, stdOut_Rd, &stdOut_buf);
-				std::async(launch::async, ExecProcess::pipeListener, stdErr_Rd, &stdErr_buf);
+				std::async(launch::async, ExecProcess::pipeListener, stdOut_Rd, &stdOutBuf);
+				std::async(launch::async, ExecProcess::pipeListener, stdErr_Rd, &stdErrBuf);
 
 				//launch thread to log finish time and clean-up
 				std::async(launch::async, bind(&ExecProcess::finishListener, this));
 				return;
 			}
 		}
-
-
 	}
 	//no se pudo lanzar
-	endTime = chrono::system_clock::now();
-	state = instanceState::idle;
+	state = (WORD)basic_process::stateEnum::terminated;
+	end(L" - Abnormal process termination " + strName);
 }
 
-void ExecProcess::flush() { //escribe el buffer en los stream de la consola
-	if (parentRT->hostOpt.verbose) wcout << logTimeMessage(startTime, endTime, L" - Start executable " + strCommand, timeMessageMode::start) << endl;
-	wcout << stdOut_buf.rdbuf();
-	if (parentRT->hostOpt.verbose) wcout << logTimeMessage(startTime, endTime, L" - End executable " + strCommand, timeMessageMode::end) << endl;
-
-	wcerr << stdErr_buf.rdbuf();
-	if (parentRT->hostOpt.verbose && (int)stdErr_buf.tellp() != 0) wcerr << "End executable " << strCommand << " errors.\n";
-
-}
 
 void ExecProcess::finishListener() {
+	DWORD exitCode;
 	if (procInfo.hProcess != nullptr) WaitForSingleObject(procInfo.hProcess, INFINITE);
 	// cancels IO to unblock listener thread
 	CancelIoEx(stdOut_Rd, nullptr);
@@ -105,32 +90,59 @@ void ExecProcess::finishListener() {
 	CloseHandle(stdErr_Rd); stdErr_Rd = nullptr;
 
 	GetExitCodeProcess(procInfo.hProcess, &exitCode);
+	returnValue.clear();
+	returnValue << exitCode;
 	CloseHandle(procInfo.hProcess); procInfo.hProcess = nullptr;
 	CloseHandle(procInfo.hThread); procInfo.hThread = nullptr;
 
-	endTime = chrono::system_clock::now();
-	state = instanceState::idle;
+	state = (DWORD)basic_process::stateEnum::ended;
+	end(L" - End process " + strName);
+
 }
-void ExecProcess::wait( jsrt::optional<wstring> str, jsrt::optional<wstring> str2) {
-	if (procInfo.hProcess != nullptr) {
-		WaitForSingleObject(procInfo.hProcess, INFINITE);
-		return ;
+
+void ExecProcess::pipeListener(HANDLE file, wstringstream *buffer) {
+	DWORD bytesRead, lastError;
+	char aux[500];
+	wstring waux;
+
+	while (true) {
+		if (ReadFile(file, aux, 500, &bytesRead, NULL)) {
+			ACP_decode(aux, bytesRead,waux);
+			*buffer << waux;
+		}
+		else
+		{
+			lastError = GetLastError();
+			break;
+		}
 	}
-	else return ;
 }
 
-void init();
+
+bool ExecProcess::wait( jsrt::optional<double> milliseconds) {
+
+	if (procInfo.hProcess != nullptr) {
+			auto result=WaitForSingleObject(procInfo.hProcess, milliseconds.has_value() ? (DWORD)milliseconds.value() : INFINITE);
+			return result == WAIT_OBJECT_0;
+	}
+	else return false ;
+}
 
 
-jsrt::object ExecProcess::createJsObject()
+jsrt::value ExecProcess::createChildProxy()
 {
 	jsProxy.bindMethod(L"wait", &ExecProcess::wait);
+	jsProxy.bindMethod(L"terminate", &ExecProcess::terminate);
 
-	someData = 1234;
+	jsProxy.bindProperty(L"state", (DWORD *)&state, false);
+	jsProxy.bindAccesor<double>(L"duration", &ExecProcess::getDuration, nullptr);
+	jsProxy.bindProperty(L"processID", (DWORD *)&procInfo.dwProcessId, false);
 
-	jsProxy.bindAccesor(L"int", &ExecProcess::getter, &ExecProcess::setter);
-	init();
-	someData = 456;
+	jsProxy.bindAccesor<wstring>(L"stdIn", nullptr, &ExecProcess::stdIn);
+	jsProxy.bindAccesor<wstring>(L"stdOut", &ExecProcess::stdOut, nullptr);
+	jsProxy.bindAccesor<wstring>(L"stdErr", &ExecProcess::stdErr, nullptr);
+	jsProxy.bindAccesor<wstring>(L"returnValue", &ExecProcess::cbGetReturnValue, nullptr);
+
 	return jsProxy;
 
 	}

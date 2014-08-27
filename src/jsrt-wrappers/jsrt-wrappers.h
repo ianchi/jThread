@@ -929,12 +929,10 @@ namespace jsrt
 	class rest_base {};
 
 	template<class R>
-	class rest 
+	class rest : public optional_base, public std::vector<R>, public rest_base
 	{
 	public:
 		//std::vector<R> data;
-		rest() {}
-		~rest(){}
 	};
 
 
@@ -1035,7 +1033,7 @@ namespace jsrt
 		}
 
 		template<class T>
-		static JsErrorCode to_native(JsValueRef value, rest<T> result)
+		static JsErrorCode to_native(JsValueRef value, rest<T> *result)
 		{
 			//we should never arrive here!
 			return JsErrorInvalidArgument;
@@ -1085,6 +1083,17 @@ namespace jsrt
 
 			return error;
         }
+
+		template<>
+		static JsErrorCode to_native<DWORD>(JsValueRef value, DWORD *result)
+		{
+			// returns the rounded value.
+			double typeValue;
+			JsErrorCode error = to_native<double>(value, &typeValue);
+			if (error == JsNoError) *result = (DWORD)(typeValue >= 0.0 ? (typeValue + 0.5) : (typeValue - 0.5));
+
+			return error;
+		}
 
         template<>
         static JsErrorCode to_native<double>(JsValueRef value, double *result)
@@ -1167,6 +1176,16 @@ namespace jsrt
             return from_native(value.value(), result);
         }
 
+		template<class T>
+		static JsErrorCode from_native(std::vector<T> &value, JsValueRef *result)
+		{
+			jsrt::array<T> arr= jsrt::array<T>::create(value);
+
+			*result= arr.handle();
+
+			return JsNoError;
+		}
+
         template<>
         static JsErrorCode from_native(double value, JsValueRef *result)
         {
@@ -1179,7 +1198,13 @@ namespace jsrt
             return JsIntToNumber(value, result);
         }
 
-        template<>
+		template<>
+		static JsErrorCode from_native(DWORD value, JsValueRef *result)
+		{
+			return JsIntToNumber((int)value, result);
+		}
+		
+		template<>
         static JsErrorCode from_native(bool value, JsValueRef *result)
         {
             return JsBoolToBoolean(value, result);
@@ -1809,6 +1834,22 @@ namespace jsrt
             return value;
         }
 
+		/// <summary>
+		///     Defines a new object's own property.
+		/// </summary>
+		template<class T>
+		void createValueProp(const std::wstring &propName, const T& propValue,
+			bool isWritable = false, bool isEnumerable = true, bool isConfigurable = false)
+		{
+			property_descriptor<T> descriptor = property_descriptor<T>::create();
+			property_id propId = property_id::create(propName);
+			descriptor.set_configurable(isConfigurable);
+			descriptor.set_enumerable(isEnumerable);
+			descriptor.set_writable(isWritable);
+			descriptor.set_value(propValue);
+			define_property(propId, descriptor);
+		}
+
         /// <summary>
         ///     Retrieve the value at the specified index of an object.
         /// </summary>
@@ -2206,7 +2247,19 @@ namespace jsrt
 
             return array;
         }
-    };
+		static array<T> create(const std::vector<T> &values)
+		{
+			array<T> array = create((unsigned int)values.size());
+			int index = 0;
+			for (auto iter = values.begin(); iter != values.end(); iter++)
+			{
+				array[index++] = *iter;
+			}
+
+			return array;
+		}
+
+	};
 
     /// <summary>
     ///     A reference to a JavaScript error.
@@ -5102,10 +5155,10 @@ namespace jsrt
 		std::wstring what() const
 		{
 			wchar_t _errDesc[25];
-			if (_errNumber & JsErrorCode::JsErrorCategoryUsage)        swprintf_s(_errDesc, 25, L"Usage error %X", _errNumber);
-			else if (_errNumber & JsErrorCode::JsErrorCategoryEngine)  swprintf_s(_errDesc, 25, L"Engine error %X", _errNumber);
-			else if (_errNumber & JsErrorCode::JsErrorCategoryFatal)   swprintf_s(_errDesc, 25, L"Fatal error %X", _errNumber);
-			else if (_errNumber & JsErrorCode::JsErrorCategoryScript)  swprintf_s(_errDesc, 25, L"Script error %X", _errNumber);
+			if (_errNumber & JsErrorCode::JsErrorCategoryUsage)        swprintf_s(_errDesc, 25, L"Usage error 0x%X", _errNumber);
+			else if (_errNumber & JsErrorCode::JsErrorCategoryEngine)  swprintf_s(_errDesc, 25, L"Engine error 0x%X", _errNumber);
+			else if (_errNumber & JsErrorCode::JsErrorCategoryFatal)   swprintf_s(_errDesc, 25, L"Fatal error 0x%X", _errNumber);
+			else if (_errNumber & JsErrorCode::JsErrorCategoryScript)  swprintf_s(_errDesc, 25, L"Script error 0x%X", _errNumber);
 			else swprintf_s(_errDesc, 25, L"Unknown error %X", _errNumber);
 			return _errDesc;
 		}
