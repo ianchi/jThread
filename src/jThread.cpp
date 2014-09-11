@@ -19,19 +19,17 @@ basic_process HostProcess;
 
 
 //
-// Method to start up debugging in the current context.
+// Start up debugging.
 //
 
 void startDebugger(IDebugApplication* &debugApplication, bool attach)
 {
-	HRESULT hr = S_OK;
+	HRESULT hr = E_FAIL;
 	IClassFactory *classFactory = nullptr;
 	IProcessDebugManager *pdm = nullptr;
 
-	// Initialize COM because we're going to have to talk to some COM interfaces.
 	if (CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED) != S_OK) goto error;
 
-	// Get a pointer to the process debug manager (PDM).
 	if (CoGetClassObject(__uuidof(ProcessDebugManager), CLSCTX_INPROC_SERVER, NULL, __uuidof(IClassFactory), (LPVOID *)&classFactory) != S_OK)
 		goto error;
 	if (classFactory->CreateInstance(0, _uuidof(IProcessDebugManager), (LPVOID *)&pdm) != S_OK)
@@ -45,14 +43,12 @@ void startDebugger(IDebugApplication* &debugApplication, bool attach)
 	if (!debugApplication->FCanJitDebug()) goto error;
 	if(!debugApplication->FIsAutoJitDebugEnabled()) goto error;
 
-	if (attach) {
-		hr=debugApplication->StartDebugSession();
-		debugApplication->CauseBreak();
-	}
+	hr = S_OK;
+	if (attach) hr=debugApplication->StartDebugSession();
 
 error:
-	if (debugApplication)
-		debugApplication->Release();
+//	if (debugApplication)
+//		debugApplication->Release();
 
 	if (pdm)
 		pdm->Release();
@@ -62,19 +58,16 @@ error:
 
 	if (FAILED(hr))
 	{
-		fwprintf(stderr, L"JSHost: couldn't start debugging.\n");
+		wcerr << L"jThread: couldn't start debugging.\n";
 		debugApplication = nullptr;
 	}
 
-	else fwprintf(stderr, L"debugger set.\n");
 }
 
 
 //main application entry point
 int wmain(int argc, wchar_t* argv[])
 {
-
-	system("pause");
 
 	//Set active Code Page to consistently show UNICODE output
 	auto cpIN = GetConsoleCP();
@@ -83,15 +76,17 @@ int wmain(int argc, wchar_t* argv[])
 	SetConsoleCP(cp);
 	SetConsoleOutputCP(cp);
 
+	ios_base::sync_with_stdio(false);
+
 	HostInfo hostInfo;
 	try {
 		{
 			wchar_t *pgm;
 			_get_wpgmptr(&pgm); //gets the executable 
-			tr2::sys::wpath pathHost = pgm;
+			wstring hostExe(pgm);
 			hostInfo.version = L"v0.1beta";
-			hostInfo.name = pathHost.leaf();
-			hostInfo.path = pathHost.parent_path();
+			hostInfo.name = getFilename(hostExe);
+			hostInfo.path = getParentFolder(hostExe);
 		}
 		ParseArguments args(L"PV?", { { L'T', L"[0-9]+" }, { L'D', L"(AUTO|BREAK)" } }, argc, argv);
 		HostProcess.setOptions(args);
@@ -123,7 +118,7 @@ int wmain(int argc, wchar_t* argv[])
 
 			if (!result) HostProcess.error(L"Timeout Error after " + to_wstring(HostProcess.getDuration()) + L"milliseconds");
 
-			//HostProcess.flush();
+			HostProcess.flush();
 		}
 		
 	}
@@ -131,7 +126,6 @@ int wmain(int argc, wchar_t* argv[])
 		wcerr << "jThread - Fatal error." << endl;
 	}
 
-	system("pause");
 	//resets original code page
 	SetConsoleCP(cpIN);
 	SetConsoleOutputCP(cpOUT);

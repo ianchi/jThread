@@ -35,9 +35,8 @@ public:
 		expandEnvironmentStrings(command, auxCommand);
 		expandEnvironmentStrings(args, strArguments[0]);
 
-		std::tr2::sys::wpath aux = auxCommand;
-		strName = aux.leaf();
-		strPath = std::tr2::sys::complete(aux).parent_path();
+		strName = getFilename(auxCommand);
+		strPath = getParentFolder(getFullPathName(auxCommand));
 		
 	}
 	~ExecProcess() {}

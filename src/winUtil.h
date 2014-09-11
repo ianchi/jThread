@@ -21,5 +21,15 @@ DWORD terminateProcessByHandle(HANDLE hProc, DWORD dwTimeout);
 
 void getWindowsByProcessID(DWORD PID);
 
+bool inferEncoding(std::wstring filename, std::wifstream &stream);
 bool readFile(std::wstring filename, std::wstring &content);
 bool readFileUTF16(std::wstring filename, std::wstring &content);
+
+HRESULT CreateObject(std::wstring, IDispatch FAR* FAR* ppdisp);
+
+std::wstring getFullPathName(const std::wstring &path);
+std::wstring getParentFolder(const std::wstring &path);
+std::wstring getFilename(const std::wstring &path);
+bool createDirectories(const std::wstring &path);
+
+std::wstring getLastErrorMsg();

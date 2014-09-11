@@ -4,11 +4,13 @@
 #include "winUtil.h"
 #include "jsrt-wrappers\jsrt-proxy_object.h"
 #include "Profiler.h"
+#include "file_object.h"
 
 class RuntimeThread :
 	public basic_process
 {
 public:
+
 	std::timed_mutex runningMutex;
 	std::future<void> futureReturn;
 
@@ -17,19 +19,20 @@ public:
 	std::wstring strScript;
 	bool debugBreak;
 	bool profile;
-		
+
 	std::unique_ptr<jsrt::proxy_object<RuntimeThread>> jThread;
 	std::unique_ptr<jsrt::proxy_object<RuntimeThread>> proxyInParent;
+	std::vector<std::unique_ptr<file_object>> fileObjects;
 
-	HostInfo *hostInfo=nullptr;
+	HostInfo *hostInfo = nullptr;
 
-	Profiler *profiler=nullptr;
+	Profiler *profiler = nullptr;
 
 
 public:
 	RuntimeThread() {}
-	RuntimeThread(ParseArguments args, HostInfo *hInfo) 	{ 
-		setOptions(args); 
+	RuntimeThread(ParseArguments args, HostInfo *hInfo) 	{
+		setOptions(args);
 		hostInfo = hInfo;
 
 		if (!readFile(strPath + L"\\" + strName, strScript)) {
@@ -49,12 +52,11 @@ public:
 		profile = pnt->profile;
 
 		if (arguments != nullptr) strArguments = *arguments;
-		
+
 		//if no script text, asume read from file
 		if (script == nullptr) {
-			std::tr2::sys::wpath aux = filename;
-			strName = aux.leaf();
-			strPath = std::tr2::sys::complete(aux).parent_path();
+			strName = getFilename(filename);
+			strPath = getParentFolder(getFullPathName(filename));
 			if (!readFile(strPath + L"\\" + strName, strScript)) {
 				raise(L"jThread - " + strScript);
 				strScript = L"";
@@ -67,6 +69,7 @@ public:
 		}
 
 	}
+
 	
 	~RuntimeThread();
 
@@ -100,18 +103,19 @@ public:
 		else return false;
 	}
 		
+	void RuntimeThread::terminate();
 
 
 	//callbacks for jThread object
 
 	std::wstring cbGetCurrentFolder() {return std::tr2::sys::current_path<std::wstring>(); }
 	void cbSetCurrentFolder(std::wstring folder) {std::tr2::sys::current_path(std::tr2::sys::wpath(folder)); };
-	std::wstring cbGetInput(std::wstring msg) {
+	std::wstring cbGetInput(jsrt::optional<std::wstring> msg) {
 		std::wstring ret;
 		if (outputMode & outputModeEnum::batchOut) 
 			jsrt::context::set_exception(jsrt::error::create(L"Cannot use keyboard input in async mode."));
 		else {
-			std::wcout << msg;  
+			if(msg.has_value()) std::wcout << msg.value();  
 			std::wcin >> ret;
 		}
 		return ret;
@@ -130,7 +134,21 @@ public:
 		return returnValue.eof() ? jsrt::context::undefined() : RuntimeThread::jsonParse(returnValue.str());
 	};
 
-		void RuntimeThread::terminate();
+	//ActiveX support
+	jsrt::value cbCreateObject(std::wstring progID) {
+		return cbActiveXObject(jsrt::call_info(jsrt::value(), jsrt::value(), true), progID);
+	}
+	static jsrt::value cbActiveXObject(const jsrt::call_info &info, std::wstring progID);
+	jsrt::value cbInvoke(jsrt::value obj, std::wstring method, jsrt::rest<jsrt::value> params);
+	
+	//file support
+	void cbCopyFile(std::wstring from, std::wstring to, jsrt::optional<bool> overwrite);
+	bool cbMoveFile(std::wstring from, std::wstring to, jsrt::optional<bool> overwrite);
+	bool cbDeleteFile(std::wstring file) {
+		return std::tr2::sys::remove_filename(std::tr2::sys::wpath(file));
+	}
+	std::wstring cbGetFullPathName(std::wstring path);
+	jsrt::value cbGetFile(std::wstring path);
 
 	//exposes JScript JSON functionality
 	static std::wstring jsonStringify(jsrt::value param);

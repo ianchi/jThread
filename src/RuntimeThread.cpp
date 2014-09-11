@@ -23,14 +23,14 @@ void RuntimeThread::runThread() {
 		if (!runtime.is_valid())
 			runtime = jsrt::runtime::create(JsRuntimeAttributeNone, JsRuntimeVersionEdge);
 		if (!context.is_valid()) {
-			context = runtime.create_context(hostInfo->debugApplication);
+			context = runtime.create_context();// hostInfo->debugApplication);
 		}
 
 		if (!strScript.empty()) {
 			jsrt::context::scope scope(context);
 			createjThreadProxy();
 
-			if (debugBreak && hostInfo->debugApplication!=nullptr) hostInfo->debugApplication->CauseBreak();
+			//if (debugBreak && hostInfo->debugApplication != nullptr) hostInfo->debugApplication->CauseBreak();
 			if(profile) startProfiling();
 
 			state = (DWORD)stateEnum::running;
@@ -95,6 +95,18 @@ void RuntimeThread::createjThreadProxy() {
 
 	jThread->bindMethod(L"exec", &RuntimeThread::newProcess);
 
+	jThread->bindMethod(L"createObject", &RuntimeThread::cbCreateObject);
+	jThread->bindMethod(L"invoke", &RuntimeThread::cbInvoke);
+
+	context.global().createValueProp(L"ActiveXObject", *(static_cast<jsrt::value *>(&(jsrt::function<jsrt::value, wstring>::create(cbActiveXObject)))));
+
+	jThread->bindMethod(L"copyFile", &RuntimeThread::cbCopyFile);
+	jThread->bindMethod(L"deleteFile", &RuntimeThread::cbDeleteFile);
+	jThread->bindMethod(L"moveFile", &RuntimeThread::cbMoveFile);
+	jThread->bindMethod(L"getFile", &RuntimeThread::cbGetFile);
+	jThread->bindMethod(L"getAbsolutePath", &RuntimeThread::cbGetFullPathName);
+
+
 	jThread->prevent_extension();
 
 }
@@ -144,8 +156,7 @@ bool RuntimeThread::cbWait(jsrt::optional<DWORD> milliseconds) {
 
 //loads an external js file, and runs it in the current context, sharing the global scope (and thus no parameters are passed)
 void RuntimeThread::cbLoadModule(wstring scriptPath) {
-	tr2::sys::wpath aux = scriptPath;
-	wstring script, name = aux.leaf();
+	wstring script, name = getFilename(scriptPath);
 	jsrt::value scriptResult;
 
 	if (!readFile(scriptPath, script)) {
@@ -226,7 +237,14 @@ wstring RuntimeThread::runScript(const wstring &script, wstring name) {
 	id++; //change id on each call to identify source name in call-stack trace
 	name = name.empty() ? strName : name;
 	try {
-		result = context.evaluate(script, id, name);
+
+		auto funcScript=context.parse(script, id, name);
+		
+		if (hostInfo->debugApplication != nullptr) startDebugging();
+
+		result = funcScript(context.global(), {});
+
+		//result = context.evaluate(script, id, name);
 		scriptResult = jsonStringify(result);
 	}
 	catch (const jsrt::script_exception &e) {
@@ -306,29 +324,18 @@ void RuntimeThread::startDebugging()
 	auto ret2 = debugApplication->FIsAutoJitDebugEnabled();
 	wcout << L"FIsAutoJitDebugEnabled: " << ret2 << endl; {}
 
-	auto ret4 = debugApplication->CauseBreak();
-	wcout << L"CauseBreak: " << ret4 << endl;
+	if(debugBreak) debugApplication->CauseBreak();
+	
+//	wcout << L"CauseBreak: " << ret4 << endl;
 
 	context.start_debugging(debugApplication);
 
 	//auto ret3=debugApplication->StartDebugSession();
 	//wcout << L"StargDebug: " << ret3 << endl;
 
-	system("pause");
 
 
-	APPBREAKFLAGS flag;
 
-	debugApplication->GetBreakFlags(&flag, nullptr);
-
-	wcout << L"Flag antes: " << flag;
-
-	ret4 = debugApplication->CauseBreak();
-	wcout << L"CauseBreak: " << ret4 << endl;
-
-	debugApplication->GetBreakFlags(&flag, nullptr);
-
-	wcout << L"Flag despues: " << flag;
 
 error:
 	if (debugApplication)
@@ -366,4 +373,192 @@ void RuntimeThread::startProfiling() {
 	}
 
 
+}
+
+jsrt::value RuntimeThread::cbActiveXObject(const jsrt::call_info &info, std::wstring progID){
+	IDispatch *obj;
+	jsrt::value ret = jsrt::context::undefined();
+
+	CoInitialize(NULL);
+	//can only be created with the "new" keyword
+	if (!info.is_construct_call())
+		jsrt::context::set_exception(jsrt::error::create(L"Object doesn't support this action"));
+
+	else switch (CreateObject(progID, &obj)) {
+	case NOERROR:
+		{_variant_t var(obj, false);
+		ret = jsrt::value::from_variant(&var);
+		}
+		break;
+	case REGDB_E_CLASSNOTREG:
+	case CO_E_CLASSSTRING:
+		jsrt::context::set_exception(jsrt::error::create(L"Invalid ActiveX Class string."));
+		break;
+	default:
+		jsrt::context::set_exception(jsrt::error::create(L"Error creating ActiveXObject."));
+
+	}
+
+	return ret;
+}
+
+jsrt::value RuntimeThread::cbInvoke(jsrt::value obj, std::wstring method, jsrt::rest<jsrt::value> params) {
+	jsrt::value ret = context.undefined();
+	_variant_t comObj;
+	//check parameters
+	obj.to_variant(&comObj);
+	if (comObj.vt!= VT_DISPATCH)
+		jsrt::context::set_exception(jsrt::error::create_type_error(L"First parameter must be an ActiveX object."));
+	else {
+		DISPID dispid;
+		HRESULT hr;
+		LPOLESTR str = (LPOLESTR)method.c_str();
+
+		// Get DISPID of property/method 
+		hr = comObj.pdispVal->GetIDsOfNames(IID_NULL, &str, 1, LOCALE_USER_DEFAULT, &dispid);
+		if (FAILED(hr))
+			jsrt::context::set_exception(jsrt::error::create(L"Object doesn't support method."));
+
+
+		DISPPARAMS dispparams;
+		memset(&dispparams, 0, sizeof dispparams);
+
+		dispparams.cArgs = params.size();
+		jsrt::property_id byRef = jsrt::property_id::create(L"byRef");
+
+		VARIANTARG* pvarg = NULL;
+		vector<pair<unique_ptr<_variant_t>, jsrt::object>> byRefs;
+		if (dispparams.cArgs != 0)
+		{
+			// allocate memory for all VARIANTARG parameters 
+			pvarg = new VARIANTARG[dispparams.cArgs];
+			if (pvarg == NULL) {
+				jsrt::context::set_exception(jsrt::error::create(L"Not enough memory."));
+				return ret;
+			}
+			else {
+				dispparams.rgvarg = pvarg;
+				memset(pvarg, 0, sizeof(VARIANTARG) * dispparams.cArgs);
+
+				pvarg += dispparams.cArgs - 1; // params go in opposite order
+				for (auto param = params.begin(); param != params.end(); param++, pvarg--) {
+					//check if we need to pass by reference
+					if (param->type() == JsObject) {
+						jsrt::object obj(*param);
+						if (obj.has_property(byRef)) {
+							unique_ptr<_variant_t> pVar = make_unique<_variant_t>();
+							obj.get_property(byRef).to_variant(pVar.get());
+							pvarg->vt = VT_VARIANT | VT_BYREF;
+							pvarg->pvarVal = pVar.get();
+							byRefs.push_back({ move(pVar), obj });
+						}
+						else  param->to_variant(pvarg);
+					}
+					//TODO: add support for arrays and convert to safearray
+
+					else  param->to_variant(pvarg);
+					
+				}
+			}
+		}
+		// Initialize return variant.
+		_variant_t pvRet;
+
+		EXCEPINFO pexcepinfo;
+		memset(&pexcepinfo, 0, sizeof pexcepinfo);
+		UINT pnArgErr=0;
+
+		// make the call 
+		hr = comObj.pdispVal->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT, DISPATCH_METHOD,
+			&dispparams, &pvRet,&pexcepinfo, &pnArgErr);
+
+
+		switch (hr)
+		{
+		case S_OK:
+			ret = jsrt::value::from_variant(&pvRet);
+
+			for (auto item = byRefs.begin(); item != byRefs.end(); item++) {
+				item->second.set_property(byRef, jsrt::value::from_variant(item->first.get()));
+			}
+
+			break;
+		case DISP_E_EXCEPTION:
+			jsrt::context::set_exception(jsrt::error::create((LPCWSTR)pexcepinfo.bstrDescription));
+			break;
+		case DISP_E_MEMBERNOTFOUND:
+			jsrt::context::set_exception(jsrt::error::create(L"Object doesn't support method."));
+			break;
+
+		case DISP_E_TYPEMISMATCH:
+		case DISP_E_OVERFLOW:
+		case DISP_E_BADVARTYPE:
+			jsrt::context::set_exception(jsrt::error::create_type_error(L"Parameter type mismatch."));
+			break;
+		case DISP_E_BADPARAMCOUNT:
+		case DISP_E_PARAMNOTOPTIONAL:
+			jsrt::context::set_exception(jsrt::error::create_type_error(L"Wrong number of parameters."));
+			break;
+		default:
+			jsrt::context::set_exception(jsrt::error::create(L"Error invoking method."));
+			break;
+		}
+
+		//cleanup
+		if (dispparams.rgvarg != NULL && dispparams.cArgs != 0) {
+			VARIANTARG FAR* pvarg = dispparams.rgvarg;
+			UINT cArgs = dispparams.cArgs;
+			while (cArgs--)
+			{
+				switch (pvarg->vt)
+				{
+				case VT_BSTR:
+					VariantClear(pvarg);
+					break;
+				}
+				++pvarg;
+			}
+			delete dispparams.rgvarg;
+		}
+	}
+	return ret;
+
+}
+
+
+wstring RuntimeThread::cbGetFullPathName(wstring path) {
+	return getFullPathName(path);
+}
+
+void RuntimeThread::cbCopyFile(std::wstring from, std::wstring to, jsrt::optional<bool> overwrite) {
+	using namespace std::tr2::sys;
+	if (from.empty() || to.empty()) {
+		context.set_exception(jsrt::error::create(L"The filename, directory name, or volume label syntax is incorrect."));
+		return;
+	}
+
+	from = getFullPathName(from);
+	to = getFullPathName(to);
+	if (to.back() == L'\\') to += getFilename(from);
+	
+	createDirectories(to);
+	//copy_file(pFrom, pTo,
+	//	overwrite.has_value() && overwrite.value() ? copy_option::overwrite_if_exists : copy_option::fail_if_exists);
+	if (!CopyFile(from.c_str(), to.c_str(), overwrite.has_value() && overwrite.value() ? false : true)) {
+		context.set_exception(jsrt::error::create(getLastErrorMsg()));
+	}
+}
+
+bool RuntimeThread::cbMoveFile(std::wstring from, std::wstring to, jsrt::optional<bool> overwrite) {
+	DWORD flag = MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH |
+		((!overwrite.has_value() || overwrite.value()) ? MOVEFILE_REPLACE_EXISTING : 0x00000000);
+	return MoveFileEx(from.c_str(), to.c_str(),flag)!=0;
+}
+
+jsrt::value RuntimeThread::cbGetFile(std::wstring path) {
+	unique_ptr<file_object> obj = make_unique<file_object>(path);
+	file_object *fObj = obj.get();
+	fileObjects.push_back(move(obj));
+
+	return fObj->createjsObject();
 }

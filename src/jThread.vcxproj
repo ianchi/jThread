@@ -85,8 +85,7 @@
   <ItemGroup>
     <ClInclude Include="basic_process.h" />
     <ClInclude Include="ExecProcess.h" />
-    <ClInclude Include="Header.h" />
-    <ClInclude Include="invhelp.h" />
+    <ClInclude Include="file_object.h" />
     <ClInclude Include="ParseArguments.h" />
     <ClInclude Include="Profiler.h" />
     <ClInclude Include="RuntimeThread.h" />
@@ -102,16 +101,12 @@
   <ItemGroup>
     <ClCompile Include="basic_process.cpp" />
     <ClCompile Include="ExecProcess.cpp" />
+    <ClCompile Include="file_object.cpp" />
     <ClCompile Include="jsrt-wrappers\jsrt-wrappers.cpp" />
     <ClCompile Include="jThread.cpp" />
     <ClCompile Include="ParseArguments.cpp" />
     <ClCompile Include="Profiler.cpp" />
     <ClCompile Include="RuntimeThread.cpp" />
-    <ClCompile Include="Source.cpp" />
-    <ClCompile Include="invhelp.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="winUtil.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

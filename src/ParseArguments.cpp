@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "ParseArguments.h"
-
+#include "winUtil.h"
 
 using namespace std;
 
@@ -24,7 +24,7 @@ void ParseArguments::Parse(int argc, wchar_t* argv[])
 {
 	wstring	argument, modifier;
 	wregex regexBool(L"^/([" + boolList + L"])$", regex::ECMAScript);  //valid boolean options
-	wregex regexStr(L"^/([" + strList + L"]):(.+)$", regex::icase & regex::ECMAScript); //valid modified options
+	wregex regexStr(L"^/([" + strList + L"]):(.+)$", regex::ECMAScript); //valid modified options
 	wregex regexPattern;
 	wsmatch	res;
 	enum class groupEnum { opciones, script, params };
@@ -64,12 +64,10 @@ void ParseArguments::Parse(int argc, wchar_t* argv[])
 			group = groupEnum::script;
 
 			//check valid path sintax
-			regexPattern.assign(L"^([a-z]:)?([\\w\\-\\s\\.\\\\]+)$", regex::icase & regex::ECMAScript);
+			regexPattern.assign(L"^([a-z]:)?([\\w\\-\\s\\.\\\\]+)$", regex::icase | regex::ECMAScript);
 			if (regex_search(argument, res, regexPattern)) {
-				tr2::sys::wpath aux = argument;
-
-				name = aux.leaf();
-				path = tr2::sys::complete(aux).parent_path();
+				name = getFilename(argument);
+				path = getParentFolder(getFullPathName(argument));
 				group = groupEnum::params;
 				continue;
 			}

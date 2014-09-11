@@ -340,5 +340,93 @@ bool readFile(wstring filename, wstring &content) {
 	return false;
 }
 
+/*
+* CreateObject
+*
+* Purpose:
+* Creates an instance of the Automation object and obtains it's IDispatch interface.
+* Uses Unicode with OLE.
+*
+* Parameters:
+* pszProgID ProgID of Automation object
+* ppdisp Returns IDispatch of Automation object
+*
+* Return Value:
+* HRESULT indicating success or failure
+*/
+HRESULT CreateObject(wstring progID, IDispatch FAR* FAR* ppdisp)
+{
+	CLSID clsid; // CLSID of automation object
+	HRESULT hr;
+	LPUNKNOWN punk = NULL; // IUnknown of automation object 
+	LPDISPATCH pdisp = NULL; // IDispatch of automation object 
+
+	*ppdisp = NULL;
+
+	hr=CoInitialize(nullptr);
+	// Retrieve CLSID from the progID that the user specified 
+	hr = CLSIDFromProgID(progID.c_str(), &clsid);
+	if (FAILED(hr))
+		goto error;
+
+	// Create an instance of the automation object and ask for the IDispatch interface 
+	hr = CoCreateInstance(clsid, NULL, CLSCTX_SERVER,
+		IID_IUnknown, (void FAR* FAR*)&punk);
+	if (FAILED(hr))
+		goto error;
+
+	hr = punk->QueryInterface(IID_IDispatch, (void FAR* FAR*)&pdisp);
+	if (FAILED(hr))
+		goto error;
+
+	*ppdisp = pdisp;
+	punk->Release();
+	return NOERROR;
+
+error:
+	if (punk) punk->Release();
+	if (pdisp) pdisp->Release();
+	return hr;
+}
 
 
+
+wstring getFullPathName(const wstring &path) {
+	DWORD len = GetFullPathName(path.c_str(), 0, nullptr, nullptr);
+	wstring fullName;
+	fullName.resize(len - 1);
+	fullName.reserve(len);
+	GetFullPathName(path.c_str(), len, (LPWSTR)fullName.c_str(), nullptr);
+
+	return fullName;
+}
+
+
+wstring getParentFolder(const wstring &path) {
+	wregex regexStr(L"^(.*)\\\\([^\\\\]+)\\\\?$", regex::ECMAScript); //valid modified options
+	wsmatch	res;
+	return regex_search(path, res, regexStr) ? res[1].str() : L"";
+}
+
+wstring getFilename(const wstring &path) {
+	wregex regexStr(L"([^\\\\]+)$", regex::ECMAScript); //valid modified options
+	wsmatch	res;
+	return regex_search(path, res, regexStr) ? res[1].str() : L"";
+}
+
+bool createDirectories(const wstring &path) {
+	using namespace std::tr2::sys;
+
+	return create_directories(wpath(getParentFolder(path)));
+}
+
+wstring getLastErrorMsg() {
+	DWORD err = GetLastError();
+	
+	wchar_t *pMsg=nullptr;
+	auto ret = FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, nullptr, err, 0, (LPWSTR)&pMsg, 0, nullptr);
+	wstring msg(pMsg);
+	LocalFree(pMsg);
+
+	return msg;
+}

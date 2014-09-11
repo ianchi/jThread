@@ -325,7 +325,7 @@ cleanup:
 			++pvarg;
 		}
 	}
-	delete dispparams.rgvarg;
+	//delete dispparams.rgvarg;
 	va_end(argList);
 	return hr;
 }

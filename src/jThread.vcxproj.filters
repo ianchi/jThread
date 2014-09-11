@@ -42,12 +42,6 @@
     <ClInclude Include="ExecProcess.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="invhelp.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Header.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="basic_process.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -58,6 +52,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Profiler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="file_object.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -71,16 +68,10 @@
     <ClCompile Include="jsrt-wrappers\jsrt-wrappers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="winUtil.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ExecProcess.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="invhelp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="basic_process.cpp">
@@ -93,6 +84,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Profiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="file_object.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

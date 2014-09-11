@@ -5301,6 +5301,7 @@ namespace jsrt
 		std::wstring what() const
 		{
 			object err(_error);
+			if (err.type() != JsError) return string::convert(_error).data();
 			return err.get_property<std::wstring>(jsrt::property_id::create(L"stack"));
 		}
     };

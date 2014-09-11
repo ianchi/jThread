@@ -78,7 +78,6 @@ void basic_process::flush() {
 	if (outputMode & outputModeEnum::none) return;
 	for (auto child = children.begin(); child != children.end(); child++)
 		(*child)->flush();
-	echo(L"flushing " + strName);
 	if (outputMode & outputModeEnum::batchOut) {
 		if (parent != nullptr) 
 			parent->echo(stdOutBuf.str());
@@ -86,7 +85,8 @@ void basic_process::flush() {
 			wcout << stdOutBuf.rdbuf();
 	}
 	if (outputMode & outputModeEnum::batchErr) {
-		if (!stdErrBuf.eof() && outputMode & outputModeEnum::verbose) 
+		stdErrBuf.seekp(0, ios::end);
+		if (stdErrBuf.tellp()>0 && outputMode & outputModeEnum::verbose) 
 			error(L"End errors transcript.");
 		if (parent != nullptr) 
 			parent->error(stdErrBuf.str());
